@@ -131,6 +131,20 @@ const Client = struct {
     }
 };
 
+fn runCommand(command: [*:0]const u8) void {
+    const pid = std.os.fork() catch |err| {
+        std.log.err("failed to fork process: {}", .{err});
+        return;
+    };
+
+    if (pid == 0) {
+        const argv = [_:null]?[*:0]const u8{ "sh", "-c", command, null };
+        const err = std.os.execveZ("/bin/sh", &argv, std.c.environ);
+        std.log.err("failed to exec process: {}", .{err});
+        std.os.exit(1);
+    }
+}
+
 fn onChanged(editable: ?*g.c.GtkEditable, self: *Client) callconv(.C) void {
     _ = editable;
     self.rebuildList();
@@ -177,6 +191,22 @@ fn onKeyPress(window: *g.c.GtkWindow, event: *const GdkEventKey, self: *Client) 
 
         g.c.GDK_KEY_Escape => {
             g.c.gtk_window_close(window);
+            return g.TRUE;
+        },
+
+        g.c.GDK_KEY_Return => {
+            var iter: g.c.GtkTreeIter = undefined;
+            var model: ?*g.c.GtkTreeModel = null;
+            if (g.c.gtk_tree_selection_get_selected(self.selection, &model, &iter) != g.FALSE) {
+                var value = std.mem.zeroes(g.c.GValue);
+                g.c.gtk_tree_model_get_value(model, &iter, 0, &value);
+                defer g.c.g_value_unset(&value);
+                runCommand(g.c.g_value_get_string(&value));
+            } else {
+                runCommand(g.c.gtk_entry_get_text(self.entry));
+            }
+            g.c.gtk_window_close(window);
+
             return g.TRUE;
         },
 

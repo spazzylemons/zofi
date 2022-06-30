@@ -69,32 +69,46 @@ const Client = struct {
     fn rebuildList(self: *Client) void {
         const input = std.mem.span(g.c.gtk_entry_get_text(self.entry));
 
-        const list_box_widget = g.c.gtk_list_box_new();
-        const list_box = g.cast(g.c.GtkListBox, list_box_widget, g.c.gtk_list_box_get_type());
-        const list_box_container = g.cast(g.c.GtkContainer, list_box, g.c.gtk_container_get_type());
+        var iter: g.c.GtkTreeIter = undefined;
+        const store = g.c.gtk_list_store_new(1, g.c.G_TYPE_STRING);
+
+        const view_widget = g.c.gtk_tree_view_new();
+        const view = g.cast(g.c.GtkTreeView, view_widget, g.c.gtk_tree_view_get_type());
+
+        const selection = g.c.gtk_tree_view_get_selection(view);
+        g.c.gtk_tree_selection_set_mode(selection, g.c.GTK_SELECTION_BROWSE);
+
+        const renderer = g.c.gtk_cell_renderer_text_new();
+        _ = g.c.gtk_tree_view_insert_column_with_attributes(view, @as(c_int, -1), @as(?[*]const u8, null), renderer, @as([*]const u8, "text"), @as(c_int, 0), @as(?*anyopaque, null));
+        g.c.gtk_tree_view_set_headers_visible(view, g.FALSE);
+
+        g.c.gtk_tree_view_set_model(view, g.cast(g.c.GtkTreeModel, store, g.c.gtk_tree_model_get_type()));
+        g.c.g_object_unref(store);
 
         var buf: [std.os.PATH_MAX + 1]u8 = undefined;
+        var contains_entries = false;
 
         for (self.exes) |exe| {
             if (std.mem.indexOf(u8, exe, input) == null) continue;
             std.mem.copy(u8, &buf, exe);
             buf[exe.len] = 0;
-            const label = g.c.gtk_label_new(&buf);
-            g.c.gtk_container_add(list_box_container, label);
+            g.c.gtk_list_store_append(store, &iter);
+            g.c.gtk_list_store_set(store, &iter, @as(c_int, 0), @ptrCast([*]u8, &buf), @as(c_int, -1));
+            contains_entries = true;
+        }
+
+        if (contains_entries) {
+            const path = g.c.gtk_tree_path_new_first();
+            defer g.c.gtk_tree_path_free(path);
+            g.c.gtk_tree_selection_select_path(selection, path);
         }
 
         const scrolled_window_widget = g.c.gtk_scrolled_window_new(null, null);
         const scrolled_window = g.cast(g.c.GtkScrolledWindow, scrolled_window_widget, g.c.gtk_scrolled_window_get_type());
 
-        g.c.gtk_container_add(g.cast(g.c.GtkContainer, scrolled_window, g.c.gtk_container_get_type()), list_box_widget);
+        g.c.gtk_container_add(g.cast(g.c.GtkContainer, scrolled_window, g.c.gtk_container_get_type()), view_widget);
         g.c.gtk_scrolled_window_set_min_content_height(scrolled_window, 320);
         g.c.gtk_scrolled_window_set_min_content_width(scrolled_window, 640);
-
-        g.c.gtk_list_box_set_selection_mode(list_box, g.c.GTK_SELECTION_BROWSE);
-
-        if (@ptrCast(?*g.c.GList, g.c.gtk_container_get_children(list_box_container))) |child_node| {
-            g.c.gtk_list_box_select_row(list_box, g.cast(g.c.GtkListBoxRow, child_node.data, g.c.gtk_list_box_row_get_type()));
-        }
 
         const box_container = g.cast(g.c.GtkContainer, g.c.gtk_widget_get_parent(self.entry_list), g.c.gtk_container_get_type());
         g.c.gtk_container_remove(box_container, self.entry_list);
@@ -133,7 +147,6 @@ fn onActivate(app: *g.c.GtkApplication, self: *Client) callconv(.C) void {
     const window_container = g.cast(g.c.GtkContainer, window, g.c.gtk_container_get_type());
     g.c.gtk_container_add(window_container, box_widget);
     g.c.gtk_container_set_border_width(window_container, 12);
-    // TODO - large ListBox is slow, consider loading elements on-demand somehow
     g.c.gtk_widget_show_all(window_widget);
 }
 

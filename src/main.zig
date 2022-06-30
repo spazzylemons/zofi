@@ -146,7 +146,7 @@ fn onActivate(app: *g.c.GtkApplication, self: *Client) callconv(.C) void {
 
     const window_container = g.cast(g.c.GtkContainer, window, g.c.gtk_container_get_type());
     g.c.gtk_container_add(window_container, box_widget);
-    g.c.gtk_container_set_border_width(window_container, 12);
+    g.c.gtk_container_set_border_width(window_container, 0);
     g.c.gtk_widget_show_all(window_widget);
 }
 

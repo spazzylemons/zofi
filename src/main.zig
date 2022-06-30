@@ -52,9 +52,11 @@ fn searchPath() !ExeMap {
             if (stat.mode & std.os.S.IFMT != std.os.S.IFREG) continue;
             if (stat.mode & 0o111 == 0) continue;
             // entry is a file and executable, we will add it to the map
-            try result.data.ensureUnusedCapacity(allocator, 1);
-            const copy = try allocator.dupe(u8, entry.name);
-            result.data.putAssumeCapacity(copy, {});
+            if (!result.data.contains(entry.name)) {
+                try result.data.ensureUnusedCapacity(allocator, 1);
+                const copy = try allocator.dupe(u8, entry.name);
+                result.data.putAssumeCapacity(copy, {});
+            }
         }
     }
     // all executables have been collected
@@ -65,6 +67,8 @@ const Client = struct {
     exes: []const []const u8,
     entry_list: *g.c.GtkWidget = undefined,
     entry: *g.c.GtkEntry = undefined,
+    view: *g.c.GtkTreeView = undefined,
+    selection: *g.c.GtkTreeSelection = undefined,
 
     fn rebuildList(self: *Client) void {
         const input = std.mem.span(g.c.gtk_entry_get_text(self.entry));
@@ -74,8 +78,10 @@ const Client = struct {
 
         const view_widget = g.c.gtk_tree_view_new();
         const view = g.cast(g.c.GtkTreeView, view_widget, g.c.gtk_tree_view_get_type());
+        self.view = view;
 
         const selection = g.c.gtk_tree_view_get_selection(view);
+        self.selection = selection;
         g.c.gtk_tree_selection_set_mode(selection, g.c.GTK_SELECTION_BROWSE);
 
         const renderer = g.c.gtk_cell_renderer_text_new();
@@ -116,6 +122,13 @@ const Client = struct {
         self.entry_list = scrolled_window_widget;
         g.c.gtk_widget_show_all(scrolled_window_widget);
     }
+
+    fn useIter(self: *Client, model: *g.c.GtkTreeModel, iter: *g.c.GtkTreeIter) void {
+        g.c.gtk_tree_selection_select_iter(self.selection, iter);
+        const path = g.c.gtk_tree_model_get_path(model, iter);
+        defer g.c.gtk_tree_path_free(path);
+        g.c.gtk_tree_view_scroll_to_cell(self.view, path, null, g.FALSE, 0, 0);
+    }
 };
 
 fn onChanged(editable: ?*g.c.GtkEditable, self: *Client) callconv(.C) void {
@@ -123,12 +136,61 @@ fn onChanged(editable: ?*g.c.GtkEditable, self: *Client) callconv(.C) void {
     self.rebuildList();
 }
 
+// GdkEventKey has a bitfield, so it can't be parsed by Zig.
+// we'll define it outselves, but ignore the bitfield
+const GdkEventKey = extern struct {
+    type: g.c.GdkEventType,
+    window: *g.c.GdkWindow,
+    send_event: g.c.gint8,
+    time: g.c.guint32,
+    state: g.c.GdkModifierType,
+    keyval: g.c.guint,
+    length: g.c.gint,
+    string: [*:0]g.c.gchar,
+    hardware_keycode: g.c.guint16,
+    group: g.c.guint8,
+};
+
+fn onKeyPress(window: *g.c.GtkWindow, event: *const GdkEventKey, self: *Client) callconv(.C) g.c.gboolean {
+    switch (event.keyval) {
+        g.c.GDK_KEY_Up => {
+            var iter: g.c.GtkTreeIter = undefined;
+            var model: ?*g.c.GtkTreeModel = null;
+            if (g.c.gtk_tree_selection_get_selected(self.selection, &model, &iter) != g.FALSE) {
+                if (g.c.gtk_tree_model_iter_previous(model, &iter) != g.FALSE) {
+                    self.useIter(model.?, &iter);
+                }
+            }
+            return g.TRUE;
+        },
+
+        g.c.GDK_KEY_Down => {
+            var iter: g.c.GtkTreeIter = undefined;
+            var model: ?*g.c.GtkTreeModel = null;
+            if (g.c.gtk_tree_selection_get_selected(self.selection, &model, &iter) != g.FALSE) {
+                if (g.c.gtk_tree_model_iter_next(model, &iter) != g.FALSE) {
+                    self.useIter(model.?, &iter);
+                }
+            }
+            return g.TRUE;
+        },
+
+        g.c.GDK_KEY_Escape => {
+            g.c.gtk_window_close(window);
+            return g.TRUE;
+        },
+
+        else => return g.FALSE,
+    }
+}
+
 fn onActivate(app: *g.c.GtkApplication, self: *Client) callconv(.C) void {
     const window_widget = g.c.gtk_application_window_new(app);
     const window = g.cast(g.c.GtkWindow, window_widget, g.c.gtk_window_get_type());
     g.c.gtk_layer_init_for_window(window);
     g.c.gtk_layer_set_layer(window, g.c.GTK_LAYER_SHELL_LAYER_TOP);
-    g.c.gtk_layer_set_keyboard_mode(window, g.c.GTK_LAYER_SHELL_KEYBOARD_MODE_ON_DEMAND);
+    g.c.gtk_layer_set_keyboard_mode(window, g.c.GTK_LAYER_SHELL_KEYBOARD_MODE_EXCLUSIVE);
+    g.signalConnect(window, "key-press-event", onKeyPress, self);
 
     const box_widget = g.c.gtk_box_new(g.c.GTK_ORIENTATION_VERTICAL, 0);
     const box_container = g.cast(g.c.GtkContainer, box_widget, g.c.gtk_container_get_type());

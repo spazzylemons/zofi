@@ -37,3 +37,7 @@ pub inline fn cast(comptime T: type, value: anytype, ty: c.GType) *T {
 pub inline fn signalConnect(instance: anytype, detailed_signal: [*:0]const u8, c_handler: anytype, data: anytype) void {
     _ = c.g_signal_connect_data(instance, detailed_signal, ptrCast(c.GCallback, c_handler), data, null, 0);
 }
+
+pub inline fn signalConnectSwapped(instance: anytype, detailed_signal: [*:0]const u8, c_handler: anytype, data: anytype) void {
+    _ = c.g_signal_connect_data(instance, detailed_signal, ptrCast(c.GCallback, c_handler), data, null, c.G_CONNECT_SWAPPED);
+}

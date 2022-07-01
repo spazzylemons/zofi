@@ -36,6 +36,7 @@ pub fn build(b: *std.build.Builder) !void {
     exe.linkLibC();
     try pkgConfig(b, exe, "gtk-layer-shell-0");
     try pkgConfig(b, exe, "gtk+-3.0");
+    exe.single_threaded = true;
     exe.install();
 
     const run_cmd = exe.run();

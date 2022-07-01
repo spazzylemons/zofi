@@ -3,6 +3,10 @@ const std = @import("std");
 
 const Launcher = @This();
 
+/// The width of the window.
+width: u15,
+/// The height of the window.
+height: u15,
 /// A sorted list of executable names.
 exes: []const [:0]const u8,
 /// The widget containing the current command.
@@ -145,13 +149,16 @@ fn onActivate(app: *g.c.GtkApplication, self: *Launcher) callconv(.C) void {
     g.c.gtk_layer_set_layer(window, g.c.GTK_LAYER_SHELL_LAYER_TOP);
     g.c.gtk_layer_set_keyboard_mode(window, g.c.GTK_LAYER_SHELL_KEYBOARD_MODE_EXCLUSIVE);
     g.signalConnect(window, "key-press-event", onKeyPress, self);
+    g.c.gtk_window_set_default_size(window, self.width, self.height);
+    g.c.gtk_window_set_resizable(window, g.FALSE);
 
     const box_widget = g.c.gtk_box_new(g.c.GTK_ORIENTATION_VERTICAL, 0);
-    const list_container = g.cast(g.c.GtkContainer, box_widget, g.c.gtk_container_get_type());
+    const box = g.cast(g.c.GtkBox, box_widget, g.c.gtk_box_get_type());
+    const box_container = g.cast(g.c.GtkContainer, box, g.c.gtk_container_get_type());
 
     const entry_widget = g.c.gtk_entry_new();
     self.command = g.cast(g.c.GtkEntry, entry_widget, g.c.gtk_entry_get_type());
-    g.c.gtk_container_add(list_container, entry_widget);
+    g.c.gtk_container_add(box_container, entry_widget);
     g.signalConnectSwapped(self.command, "changed", rebuildList, self);
 
     const view_widget = g.c.gtk_tree_view_new();
@@ -175,11 +182,7 @@ fn onActivate(app: *g.c.GtkApplication, self: *Launcher) callconv(.C) void {
     const scrolled_window = g.cast(g.c.GtkScrolledWindow, scrolled_window_widget, g.c.gtk_scrolled_window_get_type());
 
     g.c.gtk_container_add(g.cast(g.c.GtkContainer, scrolled_window, g.c.gtk_container_get_type()), view_widget);
-    // TODO configurable
-    g.c.gtk_scrolled_window_set_min_content_height(scrolled_window, 320);
-    g.c.gtk_scrolled_window_set_min_content_width(scrolled_window, 640);
-
-    g.c.gtk_container_add(list_container, scrolled_window_widget);
+    g.c.gtk_box_pack_end(box, scrolled_window_widget, g.TRUE, g.TRUE, 0);
 
     self.rebuildList();
 
@@ -188,9 +191,9 @@ fn onActivate(app: *g.c.GtkApplication, self: *Launcher) callconv(.C) void {
     g.c.gtk_widget_show_all(window_widget);
 }
 
-pub fn run(exes: []const [:0]const u8) u8 {
+pub fn run(exes: []const [:0]const u8, width: u15, height: u15) u8 {
     // create instance
-    var self = Launcher{ .exes = exes };
+    var self = Launcher{ .exes = exes, .width = width, .height = height };
     // create app
     const app = g.c.gtk_application_new("spazzylemons.zofi", g.c.G_APPLICATION_FLAGS_NONE);
     defer g.c.g_object_unref(app);

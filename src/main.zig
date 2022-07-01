@@ -76,39 +76,57 @@ fn stringLessThan(context: void, p: []const u8, q: []const u8) bool {
 pub fn main() u8 {
     defer _ = gpa.deinit();
 
-    var i: usize = 1;
-    while (i < std.os.argv.len) : (i += 1) {
-        const arg = std.os.argv[i];
-        if (arg[0] != '-' or arg[1] == 0 or arg[2] != 0) {
+    var width: u15 = 640;
+    var height: u15 = 320;
+
+    var args = std.process.ArgIterator.init();
+    const process_name = args.next();
+
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "-h")) {
+            std.io.getStdOut().writer().print(
+                \\usage: {s} [-h] [-v] [-cw width] [-ch height]
+                \\general options:
+                \\  -h          display this help and exit
+                \\  -v          display program information and exit
+                \\configuration:
+                \\  -cw width   set the width of the window (default: 640)
+                \\  -ch height  set the height of the window (default: 320)
+                \\
+            , .{process_name.?}) catch return 1;
+            return 0;
+        } else if (std.mem.eql(u8, arg, "-v")) {
+            std.io.getStdOut().writer().print(
+                \\zofi version {s} (commit {s})
+                \\copyright (c) 2022 spazzylemons
+                \\license: MIT <https://opensource.org/licenses/MIT>
+                \\source: <https://github.com/spazzylemons/zofi>
+                \\
+            , .{ version_info.version, version_info.commit_hash }) catch return 1;
+            return 0;
+        } else if (std.mem.eql(u8, arg, "-cw")) {
+            const value = args.next() orelse {
+                std.log.err("missing value for -cw", .{});
+                return 1;
+            };
+
+            width = std.fmt.parseUnsigned(u15, value, 10) catch |err| {
+                std.log.err("invalid width: {}", .{err});
+                return 1;
+            };
+        } else if (std.mem.eql(u8, arg, "-ch")) {
+            const value = args.next() orelse {
+                std.log.err("missing value for -ch", .{});
+                return 1;
+            };
+
+            height = std.fmt.parseUnsigned(u15, value, 10) catch |err| {
+                std.log.err("invalid height: {}", .{err});
+                return 1;
+            };
+        } else {
             std.log.err("invalid argument: {s}", .{arg});
             return 1;
-        }
-        switch (arg[1]) {
-            'h' => {
-                std.io.getStdOut().writer().print(
-                    \\usage: {s} [-h] [-v]
-                    \\  -h  display this help and exit
-                    \\  -v  display program information and exit
-                    \\
-                , .{std.os.argv[0]}) catch return 1;
-                return 0;
-            },
-
-            'v' => {
-                std.io.getStdOut().writer().print(
-                    \\zofi version {s} (commit {s})
-                    \\copyright (c) 2022 spazzylemons
-                    \\license: MIT <https://opensource.org/licenses/MIT>
-                    \\source: <https://github.com/spazzylemons/zofi>
-                    \\
-                , .{ version_info.version, version_info.commit_hash }) catch return 1;
-                return 0;
-            },
-
-            else => {
-                std.log.err("invalid argument: {s}", .{arg});
-                return 1;
-            },
         }
     }
 
@@ -123,5 +141,5 @@ pub fn main() u8 {
         allocator.free(exes);
     }
 
-    return Launcher.run(exes);
+    return Launcher.run(exes, width, height);
 }

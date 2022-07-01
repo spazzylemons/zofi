@@ -1,6 +1,7 @@
 const Launcher = @import("Launcher.zig");
 const g = @import("g.zig");
 const std = @import("std");
+const version_info = @import("version_info");
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = gpa.allocator();
@@ -94,13 +95,13 @@ pub fn main() u8 {
             },
 
             'v' => {
-                std.io.getStdOut().writer().writeAll(
-                    \\zofi - unversioned build
+                std.io.getStdOut().writer().print(
+                    \\zofi version {s} (commit {s})
                     \\copyright (c) 2022 spazzylemons
                     \\license: MIT <https://opensource.org/licenses/MIT>
                     \\source: <https://github.com/spazzylemons/zofi>
                     \\
-                ) catch return 1;
+                , .{ version_info.version, version_info.commit_hash }) catch return 1;
                 return 0;
             },
 

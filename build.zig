@@ -1,22 +1,27 @@
 const std = @import("std");
 
-fn pkgConfig(b: *std.build.Builder, obj: *std.build.LibExeObjStep, name: []const u8) !void {
-    const data = try std.ChildProcess.exec(.{
+fn runCommand(b: *std.build.Builder, argv: []const []const u8) []u8 {
+    const cmd = std.ChildProcess.exec(.{
         .allocator = b.allocator,
-        .argv = &.{ "pkg-config", "--cflags", "--libs", name },
-    });
-    defer {
-        b.allocator.free(data.stderr);
-        b.allocator.free(data.stdout);
+        .argv = argv,
+    }) catch unreachable;
+    defer b.allocator.free(cmd.stdout);
+    defer b.allocator.free(cmd.stderr);
+
+    std.io.getStdErr().writeAll(cmd.stderr) catch {};
+
+    if (cmd.term != .Exited or cmd.term.Exited != 0) {
+        std.debug.panic("{s} did not exit successfully", .{argv[0]});
     }
 
-    try std.io.getStdErr().writeAll(data.stderr);
+    return b.dupe(cmd.stdout[0 .. cmd.stdout.len - 1]);
+}
 
-    if (data.term != .Exited or data.term.Exited != 0) {
-        @panic("pkg-config failed");
-    }
+fn pkgConfig(b: *std.build.Builder, obj: *std.build.LibExeObjStep, name: []const u8) void {
+    const args = runCommand(b, &.{ "pkg-config", "--cflags", "--libs", name });
+    defer b.allocator.free(args);
 
-    var it = std.mem.tokenize(u8, data.stdout[0 .. data.stdout.len - 1], " ");
+    var it = std.mem.tokenize(u8, args, " ");
     while (it.next()) |slice| {
         if (std.mem.startsWith(u8, slice, "-I")) {
             obj.addIncludePath(b.dupe(slice[2..]));
@@ -26,7 +31,7 @@ fn pkgConfig(b: *std.build.Builder, obj: *std.build.LibExeObjStep, name: []const
     }
 }
 
-pub fn build(b: *std.build.Builder) !void {
+pub fn build(b: *std.build.Builder) void {
     const target = b.standardTargetOptions(.{});
     const mode = b.standardReleaseOptions();
 
@@ -34,12 +39,23 @@ pub fn build(b: *std.build.Builder) !void {
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.linkLibC();
-    try pkgConfig(b, exe, "gtk-layer-shell-0");
-    try pkgConfig(b, exe, "gtk+-3.0");
+    pkgConfig(b, exe, "gtk-layer-shell-0");
+    pkgConfig(b, exe, "gtk+-3.0");
     exe.single_threaded = true;
+    // allow choosing to strip binary
     if (b.option(bool, "strip", "Strip debug information from the binary to reduce file size")) |strip| {
         exe.strip = strip;
     }
+    // get short git commit hash for version info
+    const hash = runCommand(b, &.{ "git", "rev-parse", "--short", "HEAD" });
+    defer b.allocator.free(hash);
+
+    // provide version information to source code
+    const version_info = b.addOptions();
+    version_info.addOption([]const u8, "commit_hash", hash);
+    version_info.addOption([]const u8, "version", "0.0.0");
+    exe.addOptions("version_info", version_info);
+
     exe.install();
 
     const run_cmd = exe.run();

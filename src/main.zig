@@ -5,6 +5,9 @@ const std = @import("std");
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = gpa.allocator();
 
+// show warnings even in release builds
+pub const log_level = .warn;
+
 fn searchPath() ![]const [:0]const u8 {
     // get the path variable, otherwise we don't know what we can run
     const path = std.os.getenvZ("PATH") orelse return error.NoPath;

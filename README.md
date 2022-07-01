@@ -24,7 +24,9 @@ use `wayland-info` within a compositor to check for support.
 To use zofi, enter a command and press enter to run it. If your command matches
 an executable on the PATH, you can select it from a list of suggestions by
 pressing up and down, and pressing enter to run the highlighted program. Press
-escape to close zofi without running anything.
+tab with an executable selected to insert the full executable name into the
+command bar, allowing you to add command-line parameters. Press escape to close
+zofi without running anything.
 
 ## Configuration
 

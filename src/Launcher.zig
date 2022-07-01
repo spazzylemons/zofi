@@ -155,6 +155,21 @@ fn onKeyPress(window: *g.c.GtkWindow, event: *const GdkEventKey, self: *Launcher
             return g.TRUE;
         },
 
+        g.c.GDK_KEY_Tab => {
+            var iter: g.c.GtkTreeIter = undefined;
+            var model: ?*g.c.GtkTreeModel = null;
+            if (g.c.gtk_tree_selection_get_selected(self.selection, &model, &iter) != g.FALSE) {
+                var value = std.mem.zeroes(g.c.GValue);
+                g.c.gtk_tree_model_get_value(model, &iter, 0, &value);
+                defer g.c.g_value_unset(&value);
+                g.c.gtk_entry_set_text(self.command, g.c.g_value_get_string(&value));
+                g.c.gtk_entry_grab_focus_without_selecting(self.command);
+                g.c.gtk_editable_set_position(g.cast(g.c.GtkEditable, self.command, g.c.gtk_editable_get_type()), -1);
+            }
+
+            return g.TRUE;
+        },
+
         else => return g.FALSE,
     }
 }

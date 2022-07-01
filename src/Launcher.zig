@@ -31,41 +31,58 @@ const GdkEventKey = extern struct {
     group: g.c.guint8,
 };
 
+const ExeFilter = struct {
+    input: []const u8,
+    exes: []const [:0]const u8,
+    store: *g.c.GtkListStore,
+
+    fn filterOnce(self: *ExeFilter, starting: bool) void {
+        for (self.exes) |exe| {
+            if (starting) {
+                if (!std.mem.startsWith(u8, exe, self.input)) continue;
+            } else {
+                if (std.mem.indexOfPos(u8, exe, 1, self.input) == null) continue;
+            }
+            var iter: g.c.GtkTreeIter = undefined;
+            g.c.gtk_list_store_append(self.store, &iter);
+            g.c.gtk_list_store_set(
+                self.store,
+                &iter,
+                // put name in column 0
+                @as(c_int, 0),
+                exe.ptr,
+                // end of list
+                @as(c_int, -1),
+            );
+        }
+    }
+
+    fn filter(self: *ExeFilter) void {
+        self.filterOnce(true);
+        self.filterOnce(false);
+    }
+};
+
 fn rebuildList(self: *Launcher) callconv(.C) void {
     const input = std.mem.span(g.c.gtk_entry_get_text(self.command));
 
-    var iter: g.c.GtkTreeIter = undefined;
     const store = g.c.gtk_list_store_new(1, g.c.G_TYPE_STRING);
     defer g.c.g_object_unref(store);
 
-    var contains_entries = false;
+    var filter = ExeFilter{ .input = input, .exes = self.exes, .store = store };
+    filter.filter();
 
-    // take names that start with the input first
-    for (self.exes) |exe| {
-        if (!std.mem.startsWith(u8, exe, input)) continue;
-        g.c.gtk_list_store_append(store, &iter);
-        g.c.gtk_list_store_set(store, &iter, @as(c_int, 0), exe.ptr, @as(c_int, -1));
-        contains_entries = true;
-    }
-
-    // TODO DRY
-    for (self.exes) |exe| {
-        if (exe.ptr[0] == input.ptr[0]) continue;
-        if ((std.mem.indexOf(u8, exe, input) orelse continue) == 0) continue;
-        g.c.gtk_list_store_append(store, &iter);
-        g.c.gtk_list_store_set(store, &iter, @as(c_int, 0), exe.ptr, @as(c_int, -1));
-        contains_entries = true;
-    }
-
-    g.c.gtk_tree_view_set_model(self.view, g.cast(g.c.GtkTreeModel, store, g.c.gtk_tree_model_get_type()));
+    const model = g.cast(g.c.GtkTreeModel, store, g.c.gtk_tree_model_get_type());
+    g.c.gtk_tree_view_set_model(self.view, model);
 
     self.selection = g.c.gtk_tree_view_get_selection(self.view);
     g.c.gtk_tree_selection_set_mode(self.selection, g.c.GTK_SELECTION_BROWSE);
 
-    if (contains_entries) {
-        const path = g.c.gtk_tree_path_new_first();
-        defer g.c.gtk_tree_path_free(path);
-        g.c.gtk_tree_selection_select_path(self.selection, path);
+    var iter: g.c.GtkTreeIter = undefined;
+    // check if any entries exist in the list
+    if (g.c.gtk_tree_model_get_iter_first(model, &iter) != g.FALSE) {
+        // if so, select the first entry
+        g.c.gtk_tree_selection_select_iter(self.selection, &iter);
         // show find icon because pressing enter will run the selected application
         g.c.gtk_entry_set_icon_from_icon_name(self.command, g.c.GTK_ENTRY_ICON_PRIMARY, "edit-find");
     } else {

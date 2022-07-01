@@ -1,5 +1,4 @@
 const Launcher = @import("Launcher.zig");
-const g = @import("g.zig");
 const std = @import("std");
 const version_info = @import("version_info");
 
@@ -9,24 +8,26 @@ const allocator = gpa.allocator();
 // show warnings even in release builds
 pub const log_level = .warn;
 
+fn freeKeys(map: *std.StringHashMapUnmanaged(void)) void {
+    var it = map.keyIterator();
+    while (it.next()) |name| {
+        allocator.free(@ptrCast([:0]const u8, name.*));
+    }
+}
+
 fn searchPath() ![]const [:0]const u8 {
     // get the path variable, otherwise we don't know what we can run
     const path = std.os.getenvZ("PATH") orelse return error.NoPath;
     // collect executable names here
-    var map = std.StringHashMapUnmanaged([:0]const u8){};
+    var map = std.StringHashMapUnmanaged(void){};
     defer map.deinit(allocator);
-    errdefer {
-        var it = map.valueIterator();
-        while (it.next()) |name| {
-            allocator.free(name.*);
-        }
-    }
+    errdefer freeKeys(&map);
     // iterate over each path in PATH
     var path_iterator = std.mem.split(u8, path, ":");
     while (path_iterator.next()) |dir_name| {
         // open directory in iteration mode
         var dir = std.fs.cwd().openDir(dir_name, .{ .iterate = true }) catch |err| {
-            // report and more on
+            // report and move on
             std.log.warn("cannot open path directory {s}: {}", .{ dir_name, err });
             continue;
         };
@@ -35,7 +36,7 @@ fn searchPath() ![]const [:0]const u8 {
         var dir_iterator = dir.iterate();
         while (try dir_iterator.next()) |entry| {
             // follow symlinks
-            var full_path_buf: [std.fs.MAX_PATH_BYTES + 1]u8 = undefined;
+            var full_path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
             const full_path = std.fmt.bufPrintZ(&full_path_buf, "{s}/{s}", .{ dir_name, entry.name }) catch
                 return error.NameTooLong;
             var filename_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
@@ -54,21 +55,21 @@ fn searchPath() ![]const [:0]const u8 {
             if (!map.contains(entry.name)) {
                 try map.ensureUnusedCapacity(allocator, 1);
                 const copy = try allocator.dupeZ(u8, entry.name);
-                map.putAssumeCapacity(copy, copy);
+                map.putAssumeCapacity(copy, {});
             }
         }
     }
     // all executables have been collected - sort them now
     const result = try allocator.alloc([:0]const u8, map.size);
-    var it = map.valueIterator();
+    var it = map.keyIterator();
     for (result) |*name| {
-        name.* = it.next().?.*;
+        name.* = @ptrCast([:0]const u8, it.next().?.*);
     }
-    std.sort.sort([]const u8, result, {}, stringLessThan);
+    std.sort.sort([:0]const u8, result, {}, stringLessThan);
     return result;
 }
 
-fn stringLessThan(context: void, p: []const u8, q: []const u8) bool {
+fn stringLessThan(context: void, p: [:0]const u8, q: [:0]const u8) bool {
     _ = context;
     return std.mem.order(u8, p, q) == .lt;
 }

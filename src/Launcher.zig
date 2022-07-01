@@ -62,6 +62,11 @@ fn rebuildList(self: *Launcher) callconv(.C) void {
         const path = g.c.gtk_tree_path_new_first();
         defer g.c.gtk_tree_path_free(path);
         g.c.gtk_tree_selection_select_path(self.selection, path);
+        // show find icon because pressing enter will run the selected application
+        g.c.gtk_entry_set_icon_from_icon_name(self.command, g.c.GTK_ENTRY_ICON_PRIMARY, "edit-find");
+    } else {
+        // show run icon because pressing enter will run what is in the entry widget
+        g.c.gtk_entry_set_icon_from_icon_name(self.command, g.c.GTK_ENTRY_ICON_PRIMARY, "system-run");
     }
 }
 
@@ -146,7 +151,6 @@ fn onActivate(app: *g.c.GtkApplication, self: *Launcher) callconv(.C) void {
 
     const entry_widget = g.c.gtk_entry_new();
     self.command = g.cast(g.c.GtkEntry, entry_widget, g.c.gtk_entry_get_type());
-    g.c.gtk_entry_set_icon_from_icon_name(self.command, g.c.GTK_ENTRY_ICON_PRIMARY, "edit-find");
     g.c.gtk_container_add(list_container, entry_widget);
     g.signalConnectSwapped(self.command, "changed", rebuildList, self);
 

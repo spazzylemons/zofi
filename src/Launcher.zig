@@ -5,9 +5,7 @@ const Launcher = @This();
 
 /// A sorted list of executable names.
 exes: []const [:0]const u8,
-/// The widget displaying the list of executables.
-exe_list: *g.c.GtkWidget = undefined,
-/// THe widget containing the current command.
+/// The widget containing the current command.
 command: *g.c.GtkEntry = undefined,
 /// The current view containing the list of executables to display.
 view: *g.c.GtkTreeView = undefined,
@@ -34,20 +32,7 @@ fn rebuildList(self: *Launcher) callconv(.C) void {
 
     var iter: g.c.GtkTreeIter = undefined;
     const store = g.c.gtk_list_store_new(1, g.c.G_TYPE_STRING);
-
-    const view_widget = g.c.gtk_tree_view_new();
-    const view = g.cast(g.c.GtkTreeView, view_widget, g.c.gtk_tree_view_get_type());
-    self.view = view;
-
-    self.selection = g.c.gtk_tree_view_get_selection(view);
-    g.c.gtk_tree_selection_set_mode(self.selection, g.c.GTK_SELECTION_BROWSE);
-
-    const renderer = g.c.gtk_cell_renderer_text_new();
-    _ = g.c.gtk_tree_view_insert_column_with_attributes(view, @as(c_int, -1), @as(?[*]const u8, null), renderer, @as([*]const u8, "text"), @as(c_int, 0), @as(?*anyopaque, null));
-    g.c.gtk_tree_view_set_headers_visible(view, g.FALSE);
-
-    g.c.gtk_tree_view_set_model(view, g.cast(g.c.GtkTreeModel, store, g.c.gtk_tree_model_get_type()));
-    g.c.g_object_unref(store);
+    defer g.c.g_object_unref(store);
 
     var contains_entries = false;
 
@@ -68,25 +53,16 @@ fn rebuildList(self: *Launcher) callconv(.C) void {
         contains_entries = true;
     }
 
+    g.c.gtk_tree_view_set_model(self.view, g.cast(g.c.GtkTreeModel, store, g.c.gtk_tree_model_get_type()));
+
+    self.selection = g.c.gtk_tree_view_get_selection(self.view);
+    g.c.gtk_tree_selection_set_mode(self.selection, g.c.GTK_SELECTION_BROWSE);
+
     if (contains_entries) {
         const path = g.c.gtk_tree_path_new_first();
         defer g.c.gtk_tree_path_free(path);
         g.c.gtk_tree_selection_select_path(self.selection, path);
     }
-
-    const scrolled_window_widget = g.c.gtk_scrolled_window_new(null, null);
-    const scrolled_window = g.cast(g.c.GtkScrolledWindow, scrolled_window_widget, g.c.gtk_scrolled_window_get_type());
-
-    g.c.gtk_container_add(g.cast(g.c.GtkContainer, scrolled_window, g.c.gtk_container_get_type()), view_widget);
-    // TODO configurable
-    g.c.gtk_scrolled_window_set_min_content_height(scrolled_window, 320);
-    g.c.gtk_scrolled_window_set_min_content_width(scrolled_window, 640);
-
-    const box_container = g.cast(g.c.GtkContainer, g.c.gtk_widget_get_parent(self.exe_list), g.c.gtk_container_get_type());
-    g.c.gtk_container_remove(box_container, self.exe_list);
-    g.c.gtk_container_add(box_container, scrolled_window_widget);
-    self.exe_list = scrolled_window_widget;
-    g.c.gtk_widget_show_all(scrolled_window_widget);
 }
 
 fn useIter(self: *Launcher, model: *g.c.GtkTreeModel, iter: *g.c.GtkTreeIter) void {
@@ -166,16 +142,41 @@ fn onActivate(app: *g.c.GtkApplication, self: *Launcher) callconv(.C) void {
     g.signalConnect(window, "key-press-event", onKeyPress, self);
 
     const box_widget = g.c.gtk_box_new(g.c.GTK_ORIENTATION_VERTICAL, 0);
-    const box_container = g.cast(g.c.GtkContainer, box_widget, g.c.gtk_container_get_type());
+    const list_container = g.cast(g.c.GtkContainer, box_widget, g.c.gtk_container_get_type());
 
     const entry_widget = g.c.gtk_entry_new();
     self.command = g.cast(g.c.GtkEntry, entry_widget, g.c.gtk_entry_get_type());
     g.c.gtk_entry_set_icon_from_icon_name(self.command, g.c.GTK_ENTRY_ICON_PRIMARY, "edit-find");
-    g.c.gtk_container_add(box_container, entry_widget);
+    g.c.gtk_container_add(list_container, entry_widget);
     g.signalConnectSwapped(self.command, "changed", rebuildList, self);
 
-    self.exe_list = g.c.gtk_label_new("");
-    g.c.gtk_container_add(box_container, self.exe_list);
+    const view_widget = g.c.gtk_tree_view_new();
+    self.view = g.cast(g.c.GtkTreeView, view_widget, g.c.gtk_tree_view_get_type());
+
+    const renderer = g.c.gtk_cell_renderer_text_new();
+    _ = g.c.gtk_tree_view_insert_column_with_attributes(
+        self.view,
+        @as(c_int, -1),
+        @as(?[*:0]const u8, null),
+        renderer,
+        // first attribute at column 0
+        @as(?[*:0]const u8, "text"),
+        @as(c_int, 0),
+        // no more attributes
+        @as(?[*:0]const u8, null),
+    );
+    g.c.gtk_tree_view_set_headers_visible(self.view, g.FALSE);
+
+    const scrolled_window_widget = g.c.gtk_scrolled_window_new(null, null);
+    const scrolled_window = g.cast(g.c.GtkScrolledWindow, scrolled_window_widget, g.c.gtk_scrolled_window_get_type());
+
+    g.c.gtk_container_add(g.cast(g.c.GtkContainer, scrolled_window, g.c.gtk_container_get_type()), view_widget);
+    // TODO configurable
+    g.c.gtk_scrolled_window_set_min_content_height(scrolled_window, 320);
+    g.c.gtk_scrolled_window_set_min_content_width(scrolled_window, 640);
+
+    g.c.gtk_container_add(list_container, scrolled_window_widget);
+
     self.rebuildList();
 
     const window_container = g.cast(g.c.GtkContainer, window, g.c.gtk_container_get_type());

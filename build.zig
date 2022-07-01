@@ -37,6 +37,9 @@ pub fn build(b: *std.build.Builder) !void {
     try pkgConfig(b, exe, "gtk-layer-shell-0");
     try pkgConfig(b, exe, "gtk+-3.0");
     exe.single_threaded = true;
+    if (b.option(bool, "strip", "Strip debug information from the binary to reduce file size")) |strip| {
+        exe.strip = strip;
+    }
     exe.install();
 
     const run_cmd = exe.run();

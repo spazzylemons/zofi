@@ -95,6 +95,7 @@ pub fn main() u8 {
                     \\zofi - unversioned build
                     \\copyright (c) 2022 spazzylemons
                     \\license: MIT <https://opensource.org/licenses/MIT>
+                    \\source: <https://github.com/spazzylemons/zofi>
                     \\
                 ) catch return 1;
                 return 0;

@@ -1,4 +1,5 @@
 const g = @import("g.zig");
+const Mode = @import("Mode.zig");
 const std = @import("std");
 
 const Launcher = @This();
@@ -7,11 +8,11 @@ const Launcher = @This();
 width: u15,
 /// The height of the window.
 height: u15,
-/// A sorted list of executable names.
-exes: []const [:0]const u8,
+/// The mode to run in.
+mode: *Mode,
 /// The widget containing the current command.
 command: *g.c.GtkEntry = undefined,
-/// The current view containing the list of executables to display.
+/// The current view containing the list of choices to display.
 view: *g.c.GtkTreeView = undefined,
 /// The current selection of the tree view.
 selection: *g.c.GtkTreeSelection = undefined,
@@ -31,17 +32,17 @@ const GdkEventKey = extern struct {
     group: g.c.guint8,
 };
 
-const ExeFilter = struct {
+const ChoiceFilter = struct {
     input: []const u8,
-    exes: []const [:0]const u8,
+    choices: []const [:0]const u8,
     store: *g.c.GtkListStore,
 
-    fn filterOnce(self: *ExeFilter, starting: bool) void {
-        for (self.exes) |exe| {
+    fn filterOnce(self: *ChoiceFilter, starting: bool) void {
+        for (self.choices) |choice| {
             if (starting) {
-                if (!std.mem.startsWith(u8, exe, self.input)) continue;
+                if (!std.mem.startsWith(u8, choice, self.input)) continue;
             } else {
-                if (std.mem.indexOfPos(u8, exe, 1, self.input) == null) continue;
+                if (std.mem.indexOfPos(u8, choice, 1, self.input) == null) continue;
             }
             var iter: g.c.GtkTreeIter = undefined;
             g.c.gtk_list_store_append(self.store, &iter);
@@ -50,14 +51,14 @@ const ExeFilter = struct {
                 &iter,
                 // put name in column 0
                 @as(c_int, 0),
-                exe.ptr,
+                choice.ptr,
                 // end of list
                 @as(c_int, -1),
             );
         }
     }
 
-    fn filter(self: *ExeFilter) void {
+    fn filter(self: *ChoiceFilter) void {
         self.filterOnce(true);
         self.filterOnce(false);
     }
@@ -69,7 +70,7 @@ fn rebuildList(self: *Launcher) callconv(.C) void {
     const store = g.c.gtk_list_store_new(1, g.c.G_TYPE_STRING);
     defer g.c.g_object_unref(store);
 
-    var filter = ExeFilter{ .input = input, .exes = self.exes, .store = store };
+    var filter = ChoiceFilter{ .input = input, .choices = self.mode.choices, .store = store };
     filter.filter();
 
     const model = g.cast(g.c.GtkTreeModel, store, g.c.gtk_tree_model_get_type());
@@ -79,13 +80,13 @@ fn rebuildList(self: *Launcher) callconv(.C) void {
     g.c.gtk_tree_selection_set_mode(self.selection, g.c.GTK_SELECTION_BROWSE);
 
     var iter: g.c.GtkTreeIter = undefined;
+    // show find icon to indicate search result will be used
+    g.c.gtk_entry_set_icon_from_icon_name(self.command, g.c.GTK_ENTRY_ICON_PRIMARY, "edit-find");
     // check if any entries exist in the list
     if (g.c.gtk_tree_model_get_iter_first(model, &iter) != g.FALSE) {
         // if so, select the first entry
         g.c.gtk_tree_selection_select_iter(self.selection, &iter);
-        // show find icon because pressing enter will run the selected application
-        g.c.gtk_entry_set_icon_from_icon_name(self.command, g.c.GTK_ENTRY_ICON_PRIMARY, "edit-find");
-    } else {
+    } else if (self.mode.custom_allowed) {
         // show run icon because pressing enter will run what is in the entry widget
         g.c.gtk_entry_set_icon_from_icon_name(self.command, g.c.GTK_ENTRY_ICON_PRIMARY, "system-run");
     }
@@ -96,20 +97,6 @@ fn useIter(self: *Launcher, model: *g.c.GtkTreeModel, iter: *g.c.GtkTreeIter) vo
     const path = g.c.gtk_tree_model_get_path(model, iter);
     defer g.c.gtk_tree_path_free(path);
     g.c.gtk_tree_view_scroll_to_cell(self.view, path, null, g.FALSE, 0, 0);
-}
-
-fn runCommand(command: [*:0]const u8) void {
-    const pid = std.os.fork() catch |err| {
-        std.log.err("failed to fork process: {}", .{err});
-        return;
-    };
-
-    if (pid == 0) {
-        const argv = [_:null]?[*:0]const u8{ "sh", "-c", command, null };
-        const err = std.os.execveZ("/bin/sh", &argv, std.c.environ);
-        std.log.err("failed to exec process: {}", .{err});
-        std.os.exit(1);
-    }
 }
 
 fn moveSelection(self: *Launcher, func: fn (?*g.c.GtkTreeModel, ?*g.c.GtkTreeIter) callconv(.C) g.c.gboolean) void {
@@ -146,13 +133,18 @@ fn onKeyPress(window: *g.c.GtkWindow, event: *const GdkEventKey, self: *Launcher
                 var value = std.mem.zeroes(g.c.GValue);
                 g.c.gtk_tree_model_get_value(model, &iter, 0, &value);
                 defer g.c.g_value_unset(&value);
-                runCommand(g.c.g_value_get_string(&value));
-            } else {
-                runCommand(g.c.gtk_entry_get_text(self.command));
+                self.mode.execute(g.c.g_value_get_string(&value));
+                g.c.gtk_window_close(window);
+                return g.TRUE;
             }
-            g.c.gtk_window_close(window);
 
-            return g.TRUE;
+            if (self.mode.custom_allowed) {
+                self.mode.execute(g.c.gtk_entry_get_text(self.command));
+                g.c.gtk_window_close(window);
+                return g.TRUE;
+            }
+
+            return g.FALSE;
         },
 
         g.c.GDK_KEY_Tab => {
@@ -223,9 +215,9 @@ fn onActivate(app: *g.c.GtkApplication, self: *Launcher) callconv(.C) void {
     g.c.gtk_widget_show_all(window_widget);
 }
 
-pub fn run(exes: []const [:0]const u8, width: u15, height: u15) u8 {
+pub fn run(mode: *Mode, width: u15, height: u15) u8 {
     // create instance
-    var self = Launcher{ .exes = exes, .width = width, .height = height };
+    var self = Launcher{ .mode = mode, .width = width, .height = height };
     // create app
     const app = g.c.gtk_application_new("spazzylemons.zofi", g.c.G_APPLICATION_FLAGS_NONE);
     defer g.c.g_object_unref(app);

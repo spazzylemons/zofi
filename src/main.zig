@@ -86,13 +86,13 @@ pub fn main() u8 {
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "-h")) {
             std.io.getStdOut().writer().print(
-                \\usage: {s} [-h] [-v] [-cw width] [-ch height]
+                \\usage: {s} [-h] [-v] [-sx width] [-sy height]
                 \\general options:
                 \\  -h          display this help and exit
                 \\  -v          display program information and exit
                 \\configuration:
-                \\  -cw width   set the width of the window (default: 640)
-                \\  -ch height  set the height of the window (default: 320)
+                \\  -sx width   set the width of the window (default: 640)
+                \\  -sy height  set the height of the window (default: 320)
                 \\
             , .{process_name.?}) catch return 1;
             return 0;
@@ -105,9 +105,9 @@ pub fn main() u8 {
                 \\
             , .{ version_info.version, version_info.commit_hash }) catch return 1;
             return 0;
-        } else if (std.mem.eql(u8, arg, "-cw")) {
+        } else if (std.mem.eql(u8, arg, "-sx")) {
             const value = args.next() orelse {
-                std.log.err("missing value for -cw", .{});
+                std.log.err("missing value for -sx", .{});
                 return 1;
             };
 
@@ -115,9 +115,9 @@ pub fn main() u8 {
                 std.log.err("invalid width: {}", .{err});
                 return 1;
             };
-        } else if (std.mem.eql(u8, arg, "-ch")) {
+        } else if (std.mem.eql(u8, arg, "-sy")) {
             const value = args.next() orelse {
-                std.log.err("missing value for -ch", .{});
+                std.log.err("missing value for -sy", .{});
                 return 1;
             };
 
@@ -129,6 +129,13 @@ pub fn main() u8 {
             std.log.err("invalid argument: {s}", .{arg});
             return 1;
         }
+    }
+
+    // guard against signed integer overflow within gtk
+    // does not protect against the possibility of out-of-memory
+    if (@as(u32, width) * @as(u32, height) * 4 > std.math.maxInt(u31)) {
+        std.log.err("window dimensions too large", .{});
+        return 1;
     }
 
     const exes = searchPath() catch |err| {

@@ -53,7 +53,7 @@ pub fn build(b: *std.build.Builder) void {
     // provide version information to source code
     const version_info = b.addOptions();
     version_info.addOption([]const u8, "commit_hash", hash);
-    version_info.addOption([]const u8, "version", "0.0.0");
+    version_info.addOption([]const u8, "version", "0.1.0");
     exe.addOptions("version_info", version_info);
 
     exe.install();

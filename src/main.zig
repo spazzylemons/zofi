@@ -133,6 +133,7 @@ pub fn main() u8 {
 
     // guard against signed integer overflow within gtk
     // does not protect against the possibility of out-of-memory
+    // TODO should the limits be halved to account for HiDPI displays?
     if (@as(u32, width) * @as(u32, height) * 4 > std.math.maxInt(u31)) {
         std.log.err("window dimensions too large", .{});
         return 1;

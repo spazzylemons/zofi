@@ -1,8 +1,8 @@
 //! A mode that executes commands.
 
+const allocator = @import("../main.zig").allocator;
 const Mode = @import("../Mode.zig");
 const std = @import("std");
-const allocator = @import("../main.zig").allocator;
 
 const CommandMode = @This();
 

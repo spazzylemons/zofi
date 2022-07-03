@@ -3,6 +3,7 @@
 const allocator = @import("../main.zig").allocator;
 const Mode = @import("../Mode.zig");
 const std = @import("std");
+const util = @import("../util.zig");
 
 const CommandMode = @This();
 
@@ -48,11 +49,6 @@ fn freeKeys(map: *std.StringHashMapUnmanaged(void)) void {
     }
 }
 
-fn stringLessThan(context: void, p: [:0]const u8, q: [:0]const u8) bool {
-    _ = context;
-    return std.mem.order(u8, p, q) == .lt;
-}
-
 fn searchPath() ![]const [:0]const u8 {
     // get the path variable, otherwise we don't know what we can run
     const path = std.os.getenvZ("PATH") orelse return error.NoPath;
@@ -73,18 +69,9 @@ fn searchPath() ![]const [:0]const u8 {
         // chcek each file in the directory
         var dir_iterator = dir.iterate();
         while (try dir_iterator.next()) |entry| {
-            // follow symlinks
-            var full_path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-            const full_path = std.fmt.bufPrintZ(&full_path_buf, "{s}/{s}", .{ dir_name, entry.name }) catch
-                return error.NameTooLong;
-            var filename_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-            const filename = std.fs.realpathZ(full_path, &filename_buf) catch |err| {
-                std.log.warn("cannot locate {s}: {}", .{ full_path, err });
-                continue;
-            };
             // check that it is a file and is executable
-            const stat = std.os.fstatat(dir.fd, filename, 0) catch |err| {
-                std.log.warn("cannot stat {s}: {}", .{ filename, err });
+            const stat = util.followStatAt(dir.fd, entry.name) catch |err| {
+                std.log.warn("cannot stat {s}: {}", .{ entry.name, err });
                 continue;
             };
             if (stat.mode & std.os.S.IFMT != std.os.S.IFREG) continue;
@@ -103,6 +90,6 @@ fn searchPath() ![]const [:0]const u8 {
     for (result) |*name| {
         name.* = @ptrCast([:0]const u8, it.next().?.*);
     }
-    std.sort.sort([:0]const u8, result, {}, stringLessThan);
+    util.sortChoices(result);
     return result;
 }

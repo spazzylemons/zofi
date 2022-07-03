@@ -42,7 +42,9 @@ const ChoiceFilter = struct {
             if (starting) {
                 if (!std.mem.startsWith(u8, choice, self.input)) continue;
             } else {
-                if (std.mem.indexOfPos(u8, choice, 1, self.input) == null) continue;
+                if (std.mem.indexOf(u8, choice, self.input)) |index| {
+                    if (index == 0) continue;
+                } else continue;
             }
             var iter: g.c.GtkTreeIter = undefined;
             g.c.gtk_list_store_append(self.store, &iter);

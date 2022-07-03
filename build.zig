@@ -31,31 +31,40 @@ fn pkgConfig(b: *std.build.Builder, obj: *std.build.LibExeObjStep, name: []const
     }
 }
 
-pub fn build(b: *std.build.Builder) void {
-    const target = b.standardTargetOptions(.{});
-    const mode = b.standardReleaseOptions();
-
-    const exe = b.addExecutable("zofi", "src/main.zig");
+fn setupExe(
+    b: *std.build.Builder,
+    exe: *std.build.LibExeObjStep,
+    target: std.zig.CrossTarget,
+    mode: std.builtin.Mode,
+    version_info: *std.build.OptionsStep,
+) void {
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.linkLibC();
     pkgConfig(b, exe, "gtk-layer-shell-0");
     pkgConfig(b, exe, "gtk+-3.0");
     exe.single_threaded = true;
-    // allow choosing to strip binary
-    if (b.option(bool, "strip", "Strip debug information from the binary to reduce file size")) |strip| {
-        exe.strip = strip;
-    }
+    exe.addOptions("version_info", version_info);
+}
+
+pub fn build(b: *std.build.Builder) void {
+    const target = b.standardTargetOptions(.{});
+    const mode = b.standardReleaseOptions();
+
     // get short git commit hash for version info
     const hash = runCommand(b, &.{ "git", "rev-parse", "--short", "HEAD" });
     defer b.allocator.free(hash);
-
     // provide version information to source code
     const version_info = b.addOptions();
     version_info.addOption([]const u8, "commit_hash", hash);
     version_info.addOption([]const u8, "version", "0.1.0");
-    exe.addOptions("version_info", version_info);
 
+    const exe = b.addExecutable("zofi", "src/main.zig");
+    setupExe(b, exe, target, mode, version_info);
+    // allow choosing to strip binary
+    if (b.option(bool, "strip", "Strip debug information from the binary to reduce file size")) |strip| {
+        exe.strip = strip;
+    }
     exe.install();
 
     const run_cmd = exe.run();
@@ -66,4 +75,10 @@ pub fn build(b: *std.build.Builder) void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    const exe_tests = b.addTest("src/main.zig");
+    setupExe(b, exe_tests, target, mode, version_info);
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&exe_tests.step);
 }

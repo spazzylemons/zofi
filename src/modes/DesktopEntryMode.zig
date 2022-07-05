@@ -242,6 +242,8 @@ fn separateArgs(buf: *std.ArrayListUnmanaged(u8), exec: []const u8) !std.ArrayLi
             if (buf.items.len > 0) {
                 try addBufToArgs(buf, &args);
             }
+        } else if (char == '"') {
+            in_quote = true;
         } else {
             try buf.append(allocator, char);
         }

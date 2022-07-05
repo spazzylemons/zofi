@@ -40,9 +40,9 @@ const ChoiceFilter = struct {
     fn filterOnce(self: *ChoiceFilter, starting: bool) void {
         for (self.choices) |choice| {
             if (starting) {
-                if (!std.mem.startsWith(u8, choice, self.input)) continue;
+                if (!std.ascii.startsWithIgnoreCase(choice, self.input)) continue;
             } else {
-                if (std.mem.indexOf(u8, choice, self.input)) |index| {
+                if (std.ascii.indexOfIgnoreCase(choice, self.input)) |index| {
                     if (index == 0) continue;
                 } else continue;
             }

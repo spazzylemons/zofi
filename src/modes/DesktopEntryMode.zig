@@ -7,7 +7,7 @@ const util = @import("../util.zig");
 
 const DesktopEntryMode = @This();
 
-const Map = std.StringHashMapUnmanaged([]const [:0]const u8);
+const Map = std.StringHashMapUnmanaged(DesktopCommand);
 
 /// The mode structure.
 mode: Mode,
@@ -28,10 +28,7 @@ fn freeMap(map: *Map) void {
     var it = map.iterator();
     while (it.next()) |entry| {
         allocator.free(@ptrCast([:0]const u8, entry.key_ptr.*));
-        for (entry.value_ptr.*) |arg| {
-            allocator.free(arg);
-        }
-        allocator.free(entry.value_ptr.*);
+        entry.value_ptr.deinit();
     }
     map.deinit(allocator);
 }
@@ -96,16 +93,28 @@ const Locale = struct {
     }
 };
 
-const DesktopEntry = struct {
-    name: []const u8,
+const DesktopCommand = struct {
     exec: []const [:0]const u8,
+    path: ?[]const u8,
 
-    fn deinit(self: DesktopEntry) void {
+    fn deinit(self: DesktopCommand) void {
         for (self.exec) |arg| {
             allocator.free(arg);
         }
         allocator.free(self.exec);
+        if (self.path) |path| {
+            allocator.free(path);
+        }
+    }
+};
+
+const DesktopEntry = struct {
+    name: [:0]const u8,
+    command: DesktopCommand,
+
+    fn deinit(self: DesktopEntry) void {
         allocator.free(self.name);
+        self.command.deinit();
     }
 };
 
@@ -246,24 +255,32 @@ fn separateArgs(buf: *std.ArrayListUnmanaged(u8), exec: []const u8) !std.ArrayLi
 }
 
 const MatchEntries = struct {
+    type: MatchEntry = .{},
     name: MatchEntry = .{},
     icon: MatchEntry = .{},
     exec: MatchEntry = .{},
+    path: MatchEntry = .{},
 
     fn deinit(self: MatchEntries) void {
+        self.type.deinit();
         self.name.deinit();
         self.icon.deinit();
         self.exec.deinit();
+        self.path.deinit();
     }
 };
 
 fn parseEntry(locale: Locale, entry: Entry, entries: *MatchEntries) !void {
-    const match_entry = if (std.mem.eql(u8, entry.key, "Name"))
+    const match_entry = if (std.mem.eql(u8, entry.key, "Type"))
+        &entries.type
+    else if (std.mem.eql(u8, entry.key, "Name"))
         &entries.name
     else if (std.mem.eql(u8, entry.key, "Icon"))
         &entries.icon
     else if (std.mem.eql(u8, entry.key, "Exec"))
         &entries.exec
+    else if (std.mem.eql(u8, entry.key, "Path"))
+        &entries.path
     else
         return;
 
@@ -376,6 +393,8 @@ fn parseFile(locale: Locale, file: std.fs.File) !?DesktopEntry {
     defer entries.deinit();
 
     if (entries.name.value == null) return error.SyntaxError;
+    if (entries.type.value == null) return error.SyntaxError;
+    if (!std.mem.eql(u8, entries.type.value.?, "Application")) return null;
 
     var args = try separateArgs(&buf, entries.exec.value orelse return null);
     defer freeArgs(&args);
@@ -383,11 +402,18 @@ fn parseFile(locale: Locale, file: std.fs.File) !?DesktopEntry {
     var expander = FieldCodeExpander{ .args = &args };
     try expander.expand(entries);
 
-    const result = DesktopEntry{
-        .name = entries.name.value.?,
+    const name = try allocator.dupeZ(u8, entries.name.value.?);
+
+    const command = DesktopCommand{
         .exec = args.toOwnedSlice(allocator),
+        .path = entries.path.value,
     };
-    entries.name.value = null;
+    entries.path.value = null;
+
+    const result = DesktopEntry{
+        .name = name,
+        .command = command,
+    };
 
     return result;
 }
@@ -429,12 +455,12 @@ fn searchDirectory(
                     continue;
                 },
             }) |*e| {
-                defer e.deinit();
-                try map.ensureUnusedCapacity(allocator, 1);
                 if (!map.contains(e.name)) {
-                    const copy = try allocator.dupeZ(u8, e.name);
-                    map.putAssumeCapacity(copy, e.exec);
-                    e.exec = &.{};
+                    errdefer e.deinit();
+                    try map.ensureUnusedCapacity(allocator, 1);
+                    map.putAssumeCapacity(e.name, e.command);
+                } else {
+                    e.deinit();
                 }
             }
         }
@@ -499,16 +525,16 @@ pub fn deinit(self: *DesktopEntryMode) void {
 
 fn execute(mode: *Mode, choice: [*:0]const u8) void {
     const self = @fieldParentPtr(DesktopEntryMode, "mode", mode);
-    if (self.map.get(std.mem.span(choice))) |args_value| {
-        const argv = allocator.alloc(?[*:0]const u8, args_value.len + 1) catch {
+    if (self.map.get(std.mem.span(choice))) |command| {
+        const argv = allocator.alloc(?[*:0]const u8, command.exec.len + 1) catch {
             std.log.err("failed to allocate arguments", .{});
             return;
         };
         defer allocator.free(argv);
-        for (args_value) |arg, i| {
+        for (command.exec) |arg, i| {
             argv[i] = arg.ptr;
         }
-        argv[args_value.len] = null;
+        argv[command.exec.len] = null;
 
         const pid = std.os.fork() catch |err| {
             std.log.err("failed to fork process: {}", .{err});
@@ -516,6 +542,12 @@ fn execute(mode: *Mode, choice: [*:0]const u8) void {
         };
 
         if (pid == 0) {
+            if (command.path) |path| {
+                std.os.chdir(path) catch |err| {
+                    std.log.err("failed to chdir into requested path: {}", .{err});
+                    std.os.exit(1);
+                };
+            }
             const err = std.os.execvpeZ(argv[0].?, @ptrCast([*:null]const ?[*:0]const u8, argv.ptr), std.c.environ);
             std.log.err("failed to exec process: {}", .{err});
             std.os.exit(1);

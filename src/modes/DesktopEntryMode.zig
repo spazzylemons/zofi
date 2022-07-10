@@ -324,7 +324,7 @@ fn parseEntries(buf: *std.ArrayListUnmanaged(u8), locale: Locale, file: std.fs.F
                 }
             }
             buf.clearRetainingCapacity();
-        } else {
+        } else if (byte != '\r') {
             try buf.append(allocator, byte);
         }
     }

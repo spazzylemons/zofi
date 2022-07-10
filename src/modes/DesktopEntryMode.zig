@@ -397,6 +397,14 @@ fn parseFile(locale: Locale, file: std.fs.File) !?DesktopEntry {
 
     const name = try allocator.dupeZ(u8, entries.name.value.?);
 
+    // treat empty path as null
+    if (entries.path.value) |path| {
+        if (path.len == 0) {
+            allocator.free(path);
+            entries.path.value = null;
+        }
+    }
+
     const command = DesktopCommand{
         .exec = args.toOwnedSlice(allocator),
         .path = entries.path.value,

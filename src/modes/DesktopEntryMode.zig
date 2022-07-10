@@ -306,7 +306,7 @@ fn parseEntries(buf: *std.ArrayListUnmanaged(u8), locale: Locale, file: std.fs.F
     var result = MatchEntries{};
     errdefer result.deinit();
 
-    var seen_line = false;
+    var in_desktop_entry = false;
 
     while (true) {
         const byte = file.reader().readByte() catch |err| switch (err) {
@@ -321,14 +321,9 @@ fn parseEntries(buf: *std.ArrayListUnmanaged(u8), locale: Locale, file: std.fs.F
         if (byte == '\n') {
             if (try parseLine(buf.items)) |line| {
                 if (line == .GroupHeader) {
-                    if (!std.mem.eql(u8, line.GroupHeader, "Desktop Entry")) {
-                        if (!seen_line) return error.SyntaxError;
-                        break;
-                    }
-                    seen_line = true;
-                } else if (!seen_line) {
-                    return error.SyntaxError;
-                } else {
+                    if (in_desktop_entry) break;
+                    in_desktop_entry = std.mem.eql(u8, line.GroupHeader, "Desktop Entry");
+                } else if (in_desktop_entry) {
                     try parseEntry(locale, line.Entry, &result);
                 }
             }

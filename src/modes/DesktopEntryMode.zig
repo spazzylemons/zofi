@@ -310,11 +310,7 @@ fn parseEntries(buf: *std.ArrayListUnmanaged(u8), locale: Locale, file: std.fs.F
 
     while (true) {
         const byte = file.reader().readByte() catch |err| switch (err) {
-            error.EndOfStream => if (buf.items.len != 0) {
-                return error.SyntaxError;
-            } else {
-                break;
-            },
+            error.EndOfStream => if (buf.items.len != 0) '\n' else break,
             else => |e| return e,
         };
 

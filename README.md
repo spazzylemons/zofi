@@ -8,13 +8,9 @@ A straightforward Wayland application launcher similar to rofi and dmenu.
 
 - GTK 3
 - gtk-layer-shell
-- pkg-config
-- The latest version of Zig
+- Go
 
-Run `zig build` to build zofi. The executable is placed at `zig-out/bin/zofi`.
-See [this link](https://ziglang.org/documentation/master/#Build-Mode) for
-building an optimized binary. To see all available options, run
-`zig build --help`.
+Run `go build .` to build zofi.
 
 ## Usage
 
